@@ -3,17 +3,21 @@ import numpy as np
 
 
 class BaseVector:
-    def __init__(self, Position, TexCoord=None, Color=None):
-        self.Position = np.array(Position, dtype=np.float32)
+    def __init__(self, Position = None, PositionScale = None, TexCoord=None, Color=None, InstanceBasedData=None):
+        self.Position = np.array(Position, dtype=np.float32) if Position is not None else np.array([0, 0, 0], dtype=np.float32)
+        self.PositionScale = np.array(PositionScale, dtype=np.float32) if PositionScale is not None else np.array([0, 0], dtype=np.float32)
         self.TexCoord = np.array(TexCoord, dtype=np.float32) if TexCoord is not None else None
-        self.Color = np.array(Color, dtype=np.float32) if Color is not None else None
+        self.Color = np.array(Color, dtype=np.float32) if Color is not None else [1, 1, 1, 1]
+        self.InstanceBasedData = np.array(InstanceBasedData, dtype=np.float32) if InstanceBasedData is not None else None
 
     def Unpack(self):
-        Parts = [self.Position]
+        Parts = [self.Position, self.PositionScale]
+        
         if self.TexCoord is not None:
             Parts.append(self.TexCoord)
         if self.Color is not None:
             Parts.append(self.Color)
+        
         return np.concatenate(Parts).astype(np.float32)
 
     def __repr__(self):

@@ -1,10 +1,7 @@
-import glfw
 import numpy as np
 import ctypes
-
 from OpenGL.GL import *
 from PIL import Image
-from Vectors import BaseVector
 
 class Shader:
     def __init__(self, VertexShader: str, FragmentShader: str):
@@ -13,6 +10,8 @@ class Shader:
         
         with open(FragmentShader, "r") as Source:
             self.FragmentShaderSource = Source.read()
+        
+        self._Uniforms: list[Uniform] = []
     
     def Compile(self):
         VertexShader = glCreateShader(GL_VERTEX_SHADER) 
@@ -33,7 +32,6 @@ class Shader:
             Log = glGetShaderInfoLog(FragmentShader)
             raise RuntimeError(f"Fragment Shader compile error: \n{Log}")
         
-        
         self.Shader = glCreateProgram()
         
         glAttachShader(self.Shader, VertexShader)
@@ -49,8 +47,15 @@ class Shader:
         glDeleteShader(VertexShader)
         glDeleteShader(FragmentShader)
     
+    def SetGlobalUniform(self, Name: str, Setter, Data = None):
+        UniformId = glGetUniformLocation(self.Shader, Name)
+        self._Uniforms.append(Uniform(UniformId, Setter, Data))
+    
     def Activate(self):
         glUseProgram(self.Shader)
+        
+        for Uniform in self._Uniforms:
+            Uniform.Set()
     
     def Delete(self):
         glDeleteProgram(self.Shader)
@@ -65,18 +70,19 @@ class Uniform:
         self.Setter(self.Location, self.Data)
 
 class Texture:
-    def __init__(self, ImagePath: str, TexturePosition, TextureType=GL_TEXTURE_2D):
+    def __init__(self, ImagePath: str = None, TexturePosition=0, TextureType=GL_TEXTURE_2D):
         self.Texture = None
         self.TexturePosition = TexturePosition
         self.TextureType = TextureType
         self._ImagePath = ImagePath
+        self.Image = None
         self.Generated = False
     
     def Generate(self):
         self.Generated = True
         self.Texture = glGenTextures(1)
         glActiveTexture(GL_TEXTURE0 + self.TexturePosition)
-        TempImage = Image.open(self.ImagePath).transpose(Image.FLIP_TOP_BOTTOM)
+        TempImage = Image.open(self.ImagePath) if self.ImagePath is not None else self.Image
         ImageData = np.array(TempImage.convert("RGBA"), dtype=np.uint8)
         
         glBindTexture(self.TextureType, self.Texture)
@@ -121,10 +127,13 @@ class Texture:
         self.Generate()
 
 class VertexBufferObject:
-    def __init__(self, Vertices: np.array[np.float32]):
+    def __init__(self, Vertices: np.array[np.float32], Draw = GL_STATIC_DRAW):
         self.VertexBuffer = glGenBuffers(1)
         glBindBuffer(GL_ARRAY_BUFFER, self.VertexBuffer);
-        glBufferData(GL_ARRAY_BUFFER, Vertices.nbytes, Vertices, GL_STATIC_DRAW);
+        glBufferData(GL_ARRAY_BUFFER, Vertices.nbytes, Vertices, Draw);
+    
+    def SetData(self, Vertices: np.array[np.float32], Draw = GL_STATIC_DRAW):
+        glBufferData(GL_ARRAY_BUFFER, Vertices.nbytes, Vertices, Draw);
     
     def Bind(self):
         glBindBuffer(GL_ARRAY_BUFFER, self.VertexBuffer)
@@ -138,13 +147,15 @@ class VertexBufferObject:
 class VertexArrayObject:
     def __init__(self):
         self.VertexArray = glGenVertexArrays(1)
+        self.Divisor: int = 0
     
     def LinkAttrib(self, VBO: VertexBufferObject, Layout: int, NumComponents: int, Type: int, Stride: int, Offset: int):
         self.Bind()
         VBO.Bind()
         
-        glVertexAttribPointer(Layout, NumComponents, Type, GL_FALSE, Stride, ctypes.c_void_p(Offset))
         glEnableVertexAttribArray(Layout)
+        glVertexAttribPointer(Layout, NumComponents, Type, GL_FALSE, Stride, ctypes.c_void_p(Offset))
+        glVertexAttribDivisor(Layout, self.Divisor);
         
         VBO.Unbind()
         self.Unbind()

@@ -55,3 +55,7 @@ class Event:
     
     def Shutdown(self):
         self._Executor.shutdown(wait=True)
+
+    def Delete(self):
+        self.Shutdown()
+        del self
