@@ -1,6 +1,7 @@
 from Entities import ImageEntity, Shader, BaseVector
 from Window import Window
 import numpy as np
+import json
 
 GremlinVertices = [
 	BaseVector(Position=[0.0, 100, 0.0], TexCoord = [0.0, 1.0]),
@@ -26,19 +27,10 @@ def GetRandomColor():
     R, G, B = np.random.random(3)
     return [R, G, B, 1]
 
-Names = [
-    "Bob",
-    "Dobby",
-    "Jeffery",
-    "Adolf",
-    "Rudolph",
-    "Elmo",
-    "Barney",
-    "Emily",
-    "Claudia",
-    "Name",
-]
+with open("./Resources/Names.json", "r") as file:
+    Data = json.load(file)
 
+Names = Data['Names']
 class Gremlin:
     def __init__(self, Shader: Shader, Window: Window, Position=None):
         self.Entity = ImageEntity(["./Resources/Gremlin.png", "./Resources/DeadGremlin.png"], Shader, GremlinVertices, GremlinIndices)
@@ -78,8 +70,16 @@ class Gremlin:
         return Gremlin(self.Entity._Shader, Window, self.MatePosition)
     
     def Walk(self, DeltaTime, Window):
-        if self.Busy and self.Mate: return self.WalkToMate(DeltaTime, Window)
-        elif self.Busy: self.WalkToBush(DeltaTime)
+        if self.Busy and self.Mate and self.Hunger > 20:
+            return self.WalkToMate(DeltaTime, Window)
+        elif self.Busy and self.Mate:
+            self.Mate.Mate = None
+            self.Mate.Busy = False
+            self.Mate = None
+            self.Busy = False
+        
+        if self.Busy:
+            self.WalkToBush(DeltaTime)
         else:
             self.CurrentTime += DeltaTime
             if self.CurrentTime >= 2.5:
@@ -103,15 +103,20 @@ class Gremlin:
         
         Distance = np.linalg.norm(self.MatePosition - self.Position)
         MateDistance = np.linalg.norm(self.MatePosition - self.Mate.Position)
+        self.BusyDuration = max(Distance / self.WalkSpeed, 1e-3)
         
         if Distance <= 1e-3 and MateDistance <= 1e-3:
             Baby = self.MakeBabyGremlin(Window)
             print(f"{self.Name} Mated with {self.Mate.Name} to make {Baby.Name} at {self.MatePosition}")
             self.Busy = False
+            self.Hunger -= 25
+            self.Mate.Hunger -= 25
             self.Mate.MateCooldown = 10
+            self.Mate.IdlePosition = self.Mate.Position
             self.Mate.Mate = None
             self.Mate.Busy = False
             self.Mate = None
+            self.IdlePosition = self.Position
             self.MateCooldown = 10
             return Baby
         elif Distance > 1e-3:
@@ -119,13 +124,20 @@ class Gremlin:
             self.Position = self.Position + (self.MatePosition - self.Position) * Time
     
     def Eat(self):
-        self.Hunger += 100
+        self.Hunger += 50
         self.TargetedBush.Eat()
         self.TargetedBush = None
     
     def Kill(self):
         self.Entity.CurrentTexture = 1
-        
+    
+    def Delete(self, Window: Window):
+        Window.World.RemoveEntity(self.Entity)
+        self.Entity.Delete()
+        del self
+    
+    def __str__(self):
+        return f"Name: {self.Name}, Hunger: {self.Hunger}, Mate Cooldown: {self.MateCooldown}, Busy: {self.Busy}"
     
     @property
     def Position(self):

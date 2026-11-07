@@ -2,13 +2,12 @@
 import glfw
 from Shaders import Shader
 from Window import Window, World
-from WorldGenerator import WorldGenerator
 from Entities import *
 from OpenGL.GL import *
 from math import cos, sqrt
 from Gremlin import *
+from Graph import *
 import numpy as np
-import numpy.typing as npt
 
 #--{ Variables }--#
 Size = 100
@@ -31,6 +30,8 @@ Indices = [
 	0, 1, 2,
 	0, 2, 3
 ]
+
+#--{ Functions }--#
 
 def GetRandomPositions(Amount):
 	Positions = []
@@ -58,7 +59,7 @@ def Main():
 	#--[ Window & World Creation ]--#
 	WorldObject = World()
 	
-	OpenGLWindow = Window(WorldObject, [500, 500])
+	OpenGLWindow = Window(WorldObject, [1920, 1080])
 	OpenGLWindow.Display()
 	OpenGLWindow.SetBackgroundColorHex("#1e1e2eFF")
 	
@@ -70,37 +71,42 @@ def Main():
 	OpenGLWindow.Update(Shaders)
 	
 	#--[ Entities ]--#
-	BushAmount = np.random.randint(1, 10)
+	BushAmount = 20
 	Bushes: list[Bush] = np.array([Bush(ShaderObject, OpenGLWindow) for i in range(BushAmount)])
 	
 	IsValid = np.vectorize(lambda Bush: not (Bush.Targeted or Bush.Regrowing))
 	IsRegrowing = np.vectorize(lambda Bush: Bush.Regrowing)
 	
-	StartingGremlinCount = 3
+	StartingGremlinCount = 10
 	Gremlins: list[Gremlin] = np.array([Gremlin(ShaderObject, OpenGLWindow) for i in range(StartingGremlinCount)])
 	CanMate = np.vectorize(lambda Gremlin: (not Gremlin.MateCooldown and Gremlin.Hunger >= 90 and Gremlin.Mate is None))
+	
+	#--[ Graph ]--#
+	Stats = StatsRecorder()
+	# Live = LiveGraph()
+	LiveUpdateCounter = 0
 	
 	#--[ Functions ]--#
 	Frame = 0
 	def EntityChanges(DeltaTime):
-		nonlocal Gremlins
-		nonlocal Frame
+		nonlocal Gremlins, Frame, LiveUpdateCounter
 		
 		RegrowingMask = IsRegrowing(Bushes)
 		for Bush in Bushes[RegrowingMask]:
 			Bush.DownTime += DeltaTime
-			if Bush.DownTime >= 5:
+			if Bush.DownTime >= 2.5:
 				Bush.Regrow()
 		
 		DeadGremlins = []
-		BabyGremlins = []
+		Gremlings = []
 		for Gremlin in Gremlins:
+			# print(Gremlin)
 			ValidBushMask = IsValid(Bushes)
 			MateMask = CanMate(Gremlins)
 			
-			Gremlin.Hunger -= 1 / 10
+			Gremlin.Hunger -= np.random.random() * 3 / 20 + 0.1 # (0.1 -> 0.25)
 			Gremlin.MateCooldown = np.clip([Gremlin.MateCooldown - DeltaTime], 0, 10)[0]
-			if not Gremlin.Busy and len(Bushes[ValidBushMask]) and Gremlin.Hunger <= 50:
+			if not Gremlin.Busy and len(Bushes[ValidBushMask]) and Gremlin.Hunger <= 75:
 				Positions = np.array([Bush.Position for Bush in Bushes[ValidBushMask]])
 				Closest = np.sum((Positions - Gremlin.Position) ** 2, axis=1).argmin()
 				Gremlin.TargetBush(Bushes[ValidBushMask][Closest])
@@ -118,20 +124,21 @@ def Main():
 					Gremlin.Mate.MatePosition = Gremlin.MatePosition
 					Gremlin.Mate.Busy = True
 			
-			Baby = Gremlin.Walk(DeltaTime, OpenGLWindow)
-			if not Baby: continue
-			BabyGremlins.append(Baby)
+			Gremling = Gremlin.Walk(DeltaTime, OpenGLWindow)
+			if not Gremling: continue
+			Gremlings.append(Gremling)
 		
 		AliveMask = np.array([Gremlin.Hunger > 0 for Gremlin in Gremlins], dtype=bool)
-		DeadGremlins = Gremlins[~AliveMask]
+		DeadGremlins: list[Gremlin] = Gremlins[~AliveMask]
 
 		for Gremlin in DeadGremlins:
-			Gremlin.Kill()
+			Gremlin.Delete(OpenGLWindow)
 		
 		Gremlins = Gremlins[AliveMask]
-		Gremlins = np.concatenate([Gremlins, np.array(BabyGremlins)])
+		Gremlins = np.concatenate([Gremlins, np.array(Gremlings)])
 		
 		Frame += 1
+		Stats.Record(DeltaTime, Gremlins, Bushes)
 	
 	#--[ Rendering ]--#
 	OpenGLWindow.StartRenderLoop(EntityChanges)
@@ -146,6 +153,7 @@ def Main():
 		pass
 	
 	glfw.terminate()
+	Stats.Show()
 
 if __name__ == '__main__':
 	Main()
